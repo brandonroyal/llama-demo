@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meta-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: meta-server
+  template:
+    metadata:
+      labels:
+        app: meta-server
+        ai.gke.io/model: Meta-Llama-3-1-8B-Instruct
+        ai.gke.io/inference-server: vllm
+        examples.ai.gke.io/source: model-garden
+    spec:
+      containers:
+      - name: inference-server
+        image: us-docker.pkg.dev/vertex-ai/vertex-vision-model-garden-dockers/pytorch-vllm-serve:20240821_1034_RC00
+        resources:
+          requests:
+
+            nvidia.com/gpu : "1"
+          limits:
+
+            nvidia.com/gpu : "1"
+        args:
+        - python
+        - -m
+        - vllm.entrypoints.api_server
+        - --host=0.0.0.0
+        - --port=7080
+        - --swap-space=16
+        - --gpu-memory-utilization=0.9
+        - --max-model-len=32768
+        - --trust-remote-code
+        - --disable-log-stats
+        - --model=gs://vertex-model-garden-public-us/llama3.1/Meta-Llama-3.1-8B-Instruct
+        - --tensor-parallel-size=1
+        - --max-num-seqs=12
+        - --enforce-eager
+        - --disable-custom-all-reduce
+        - --enable-chunked-prefill
+        env:
+        - name: MODEL_ID
+          value: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+        - name: DEPLOY_SOURCE
+          value: "UI_NATIVE_MODEL"
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-l4
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meta-service
+spec:
+  selector:
+    app: meta-server
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 7080
